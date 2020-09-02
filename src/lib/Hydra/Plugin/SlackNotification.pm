@@ -81,6 +81,8 @@ sub buildFinished {
     my $cfg = $self->{config}->{slack};
     my @config = defined $cfg ? ref $cfg eq "ARRAY" ? @$cfg : ($cfg) : ();
 
+    print STDERR "SlackNotification_Debug Received message for $build\n";
+
     my $baseurl = $self->{config}->{'base_uri'} || "http://localhost:3000";
 
     # Figure out to which channelss to send notification.  For each channel
@@ -127,12 +129,12 @@ sub buildFinished {
         my $channel = $channels{$url};
         my @deps = grep { $_->id != $build->id } @{$channel->{builds}};
 
-        my $imgBase = "http://hydra.nixos.org";
+        my $imgBase = $baseurl;
         my $img =
-            $build->buildstatus == 0 ? "$imgBase/static/images/checkmark_256.png" :
-            $build->buildstatus == 2 ? "$imgBase/static/images/dependency_256.png" :
+            $build->buildstatus == 0 ? "$imgBase/static/images/checkmark_128.png" :
+            $build->buildstatus == 2 ? "$imgBase/static/images/dependency_128.png" :
             $build->buildstatus == 4 ? "$imgBase/static/images/cancelled_128.png" :
-            "$imgBase/static/images/error_256.png";
+            "$imgBase/static/images/error_128.png";
 
         my $color =
             $build->buildstatus == 0 ? "good" :
@@ -140,28 +142,50 @@ sub buildFinished {
             "danger";
 
         my $text = "";
-        $text .= "Job <$baseurl/job/${\$build->get_column('project')}/${\$build->get_column('jobset')}/${\$build->get_column('job')}|${\showJobName($build)}>";
-        $text .= " (and ${\scalar @deps} others)" if scalar @deps > 0;
-        $text .= ": <$baseurl/build/${\$build->id}|" . showStatus($build) . ">". " in " . renderDuration($build);
+        my $title = "";
+
+        #if job begin or complete, use different text
+        if ($build->get_column('project') =~ /(.*)-deploy/) {
+            $text .= "<$baseurl/eval/" . getFirstEval($build)->id . "|Deploy for $1, ";
+            $title .= "Deploy $1";
+            $build->get_column('jobset') =~ /deploy-(.*)/;
+            $text .= "$1>";
+            $title .= ", $1";
+
+            if ($build->get_column('job') =~ /.*begin.*/) {
+              $text .= " has started ";
+	      $color = "gray";
+            }
+            if ($build->get_column('job') =~ /.*complete.*/) {
+              if ($build->buildstatus == 0) { 
+                $text .= " has finished";
+              } else {
+                $text .= " has failed";
+              }
+            }
+        } else {
+          $text .= "Job <$baseurl/job/${\$build->get_column('project')}/${\$build->get_column('jobset')}/${\$build->get_column('job')}|${\showJobName($build)}>";
+          $text .= ":" . showStatus($build);
+          $title .= "Job " . showJobName($build) . " build number " . $build->id;
+        }
 
         if (scalar keys %{$authors} > 0) {
             # FIXME: escaping
-            my @x = map { "<mailto:$authors->{$_}|$_>" } (sort keys %{$authors});
-            $text .= ", likely due to ";
-            $text .= "$nrCommits commits by " if $nrCommits > 1;
+            my @x = map { "$_" } (keys %{$authors});
+            $text .= ", possibly by ";
             $text .= join(" or ", scalar @x > 1 ? join(", ", @x[0..scalar @x - 2]) : (), $x[-1]);
         }
-
         print STDERR "SlackNotification_Debug POSTing to url ending with: ${\substr $url, -8}\n";
+
 
         my $msg =
         { attachments =>
-          [{ fallback => "Job " . showJobName($build) . " build number " . $build->id . ": " . showStatus($build),
+          [{ fallback => "Job " . showJobName($build) . ": " . showStatus($build),
             text => $text,
             thumb_url => $img,
-            color => $color,
-            title => "Job " . showJobName($build) . " build number " . $build->id,
-            title_link => "$baseurl/build/${\$build->id}"
+	    color => $color,
+            title => $title,
+            title_link => "$baseurl/eval/" . getFirstEval($build)->id
           }]
         };
 
