@@ -16,8 +16,7 @@ use Catalyst qw/ConfigLoader
                 Session
                 Session::Store::FastMmap
                 Session::State::Cookie
-                Captcha
-                PrometheusTiny/,
+                Captcha/,
                 '-Log=warn,fatal,error';
 use CatalystX::RoleApplicator;
 use YAML qw(LoadFile);
@@ -47,9 +46,6 @@ __PACKAGE__->config(
         ldap => $ENV{'HYDRA_LDAP_CONFIG'} ? LoadFile(
             file($ENV{'HYDRA_LDAP_CONFIG'})
         ) : undef
-    },
-    'Plugin::PrometheusTiny' => {
-        include_action_labels => 1,
     },
     'Plugin::Static::Simple' => {
         send_etag => 1,
